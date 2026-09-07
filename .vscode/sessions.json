@@ -1,0 +1,32 @@
+{
+  "$schema": "https://cdn.statically.io/gh/nguyenngoclongdev/cdn/main/schema/v11/terminal-keeper.json",
+  "theme": "tribe",
+  "active": "default",
+  "activateOnStartup": true,
+  "keepExistingTerminals": false,
+  "sessions": {
+    "default": [
+      {
+        "name": "cdp",
+        "autoExecuteCommands": true,
+        "icon": "debug-console",
+        "color": "terminal.ansiGreen",
+        "commands": ["./scripts/ios-debug.sh cdp"]
+      },
+      {
+        "name": "logs",
+        "autoExecuteCommands": true,
+        "icon": "output",
+        "color": "terminal.ansiYellow",
+        "commands": ["./scripts/ios-log.mjs"]
+      },
+      {
+        "name": "launch-chrome",
+        "autoExecuteCommands": true,
+        "icon": "debug-console",
+        "color": "terminal.ansiBlue",
+        "commands": ["./scripts/ios-debug.sh open 9223"]
+      }
+    ]
+  }
+}

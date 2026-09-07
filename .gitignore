@@ -7,6 +7,10 @@
 # explaining what they do - but they are never part of the repo's history.
 scratch/
 
+# Captured device console output. Regenerated every session, and can contain whatever
+# the page logged, so it is deliberately not committed.
+dev/logs/
+
 # Dev-loop artifacts (see dev/serve.py). Certificates are machine-local and
 # must not be shared.
 dev/certs/

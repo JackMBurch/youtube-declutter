@@ -163,6 +163,32 @@ else
   fail=1
 fi
 
+# 5. The iPhone's USB ethernet interface, Apple's ipheth driver, appears the moment the
+#    phone is plugged in. Chrome treats a new interface as a network change and aborts
+#    in-flight requests with ERR_NETWORK_CHANGED. That matters here more than it looks:
+#    the DevTools frontend is not served locally. pymobiledevice3 proxies /devtools/* out
+#    to chrome-devtools-frontend.appspot.com whenever that is reachable, so a flap fails
+#    every asset at once and leaves a blank window - while the failing URLs all say
+#    127.0.0.1 and look local. Name it here so the error is recognisable, not mysterious.
+# Guard on the symlink existing: most interfaces here (bridges, veth, lo) have no
+# device/driver at all, and under `set -euo pipefail` a failing readlink in an assignment
+# takes the whole script down silently.
+for i in /sys/class/net/*; do
+  [ -L "$i/device/driver" ] || continue
+  drv="$(basename "$(readlink -f "$i/device/driver")")"
+  if [ "$drv" = "ipheth" ] && [ "$(cat "$i/operstate" 2>/dev/null)" = "up" ]; then
+    n="$(basename "$i")"
+    say ""
+    say "Heads up: $n is the phone's USB ethernet (ipheth driver) and is up."
+    say "DevTools assets are proxied from chrome-devtools-frontend.appspot.com, so if"
+    say "this interface flaps they all fail with ERR_NETWORK_CHANGED despite pointing"
+    say "at 127.0.0.1. Reload the DevTools tab first; the failure is not cached. If it"
+    say "keeps happening:  sudo ip link set $n down"
+    say "usbmuxd talks over the USB mux, not this interface, so taking it down does"
+    say "not affect debugging - only iPhone USB tethering."
+  fi
+done
+
 say ""
 say "Device settings (iOS 18+ path; on iOS 17 and earlier the same items live"
 say "under Settings > Safari > Advanced). These are device settings, not Mac ones:"

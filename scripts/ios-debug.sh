@@ -63,32 +63,55 @@ else
   fail=1
 fi
 
-# 2. usbmuxd is what carries every message to the device over USB. Without it running,
-#    the device is invisible even when it is plugged in and trusted.
-if systemctl is-active --quiet usbmuxd 2>/dev/null; then
-  ok "usbmuxd running"
+# 2. Is an Apple device physically on the bus? Ask sysfs rather than libimobiledevice.
+#    The libimobiledevice tools need usbmuxd to answer, and usbmuxd is not running until a
+#    device is attached, so asking them first conflates "nothing plugged in" with "daemon
+#    down". Reading the USB tree directly breaks that circle. 05ac is Apple's vendor id.
+apple_usb=0
+for v in /sys/bus/usb/devices/*/idVendor; do
+  [ -r "$v" ] || continue
+  if [ "$(cat "$v" 2>/dev/null)" = "05ac" ]; then apple_usb=1; break; fi
+done
+
+if [ "$apple_usb" -eq 1 ]; then
+  ok "Apple device present on the USB bus"
 else
-  bad "usbmuxd not running"
-  note "sudo systemctl enable --now usbmuxd"
+  bad "no Apple device on the USB bus"
+  note "plug the phone in over USB and unlock it"
   fail=1
 fi
 
-# 3. The device, and whether this host is trusted by it. These are different failures:
-#    an attached-but-unpaired phone looks almost identical to an absent one.
+# 3. usbmuxd carries every message to the device. On Arch this unit has no [Install]
+#    section: udev starts it when an Apple device appears (39-usbmuxd.rules) and stops it
+#    when the last one is removed. So "inactive with nothing plugged in" is correct rather
+#    than broken, and `systemctl enable` fails outright on a unit with no install config.
+#    Only treat it as a fault when a device is attached and it still is not running.
+if systemctl is-active --quiet usbmuxd 2>/dev/null; then
+  ok "usbmuxd running"
+elif [ "$apple_usb" -eq 1 ]; then
+  bad "device attached but usbmuxd is not running"
+  note "sudo systemctl start usbmuxd   (start, not enable: the unit has no [Install] section)"
+  fail=1
+else
+  note "usbmuxd idle, which is expected with nothing plugged in - udev starts it on attach"
+fi
+
+# 4. Whether this host is trusted by the device. An attached-but-untrusted phone otherwise
+#    looks identical to an absent one.
 if command -v idevice_id >/dev/null 2>&1; then
   udids="$(idevice_id -l 2>/dev/null || true)"
   if [ -n "$udids" ]; then
-    ok "device attached: $(echo "$udids" | tr '\n' ' ')"
+    ok "usbmuxd sees: $(echo "$udids" | tr '\n' ' ')"
     if idevicepair validate >/dev/null 2>&1; then
       ok "host is paired and trusted"
     else
-      bad "device attached but not paired"
-      note "run: idevicepair pair    then tap Trust on the phone and re-run"
+      bad "device visible but this host is not trusted"
+      note "run: idevicepair pair    then unlock the phone, tap Trust, and re-run"
       fail=1
     fi
-  else
-    bad "no device found"
-    note "plug the phone in over USB, unlock it, and tap Trust if prompted"
+  elif [ "$apple_usb" -eq 1 ]; then
+    bad "device is on the bus but usbmuxd cannot see it"
+    note "unlock the phone and tap Trust if prompted, then re-run"
     fail=1
   fi
 else

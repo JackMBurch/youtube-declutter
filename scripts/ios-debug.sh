@@ -30,15 +30,36 @@ note() { printf '        %s\n' "$*"; }
 
 fail=0
 
+# Resolve pymobiledevice3 without depending on the shell's PATH.
+#
+# pipx installs each application into its own venv and drops the entrypoint in
+# ~/.local/bin, which is not on PATH on every machine - so "installed" and "resolves by
+# name" are different states, and the gap between them looks exactly like a missing
+# install. Check the likely locations rather than making the caller fix their profile.
+# Set PMD3 to override, which is also the escape hatch if it lives in a project venv.
+find_pmd3() {
+  if [ -n "${PMD3:-}" ]; then printf '%s\n' "$PMD3"; return; fi
+  if command -v pymobiledevice3 >/dev/null 2>&1; then command -v pymobiledevice3; return; fi
+  for c in "$HOME/.local/bin/pymobiledevice3" \
+           "$HOME/.local/share/pipx/venvs/pymobiledevice3/bin/pymobiledevice3"; do
+    [ -x "$c" ] && { printf '%s\n' "$c"; return; }
+  done
+  return 1
+}
+
 say "Checking the chain from this machine to the phone."
 say ""
 
 # 1. The bridge itself.
-if command -v pymobiledevice3 >/dev/null 2>&1; then
-  ok "pymobiledevice3 $(pymobiledevice3 version 2>/dev/null || echo '(version unknown)')"
+if PMD3_BIN="$(find_pmd3)"; then
+  ok "pymobiledevice3 $("$PMD3_BIN" version 2>/dev/null || echo '(version unknown)')"
+  case ":$PATH:" in
+    *":$(dirname "$PMD3_BIN"):"*) ;;
+    *) note "found at $PMD3_BIN, which is not on PATH - run 'pipx ensurepath' to fix the bare name" ;;
+  esac
 else
   bad "pymobiledevice3 not installed"
-  note "pacman -S --needed python-pipx && pipx install pymobiledevice3"
+  note "sudo pacman -S --needed python-pipx && pipx install pymobiledevice3"
   fail=1
 fi
 
@@ -97,7 +118,7 @@ case "$CMD" in
     say "Inspectable targets. Safari tabs appear automatically; a third-party"
     say "browser appears only if that app opted into being inspectable."
     say ""
-    pymobiledevice3 webinspector opened-tabs || {
+    "$PMD3_BIN" webinspector opened-tabs || {
       say ""
       say "No targets, or the listing failed. Two likely causes:"
       say "  - Web Inspector is off on the device, or no browser tab is open."
@@ -116,7 +137,7 @@ case "$CMD" in
     say "Note: WebKit allows one inspector session per page, so close any other"
     say "debugger holding the same tab. Ctrl-C here stops the bridge."
     say ""
-    exec pymobiledevice3 webinspector cdp
+    exec "$PMD3_BIN" webinspector cdp
     ;;
 
   *)

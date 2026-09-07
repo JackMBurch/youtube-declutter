@@ -7,9 +7,13 @@
 # DevTools Protocol, so Chromium becomes the client instead of Safari-on-a-Mac.
 #
 # Usage:
-#   scripts/ios-debug.sh check    verify the whole chain without starting anything
-#   scripts/ios-debug.sh tabs     list inspectable targets and exit
-#   scripts/ios-debug.sh cdp      start the bridge (default)
+#   scripts/ios-debug.sh check         verify the whole chain without starting anything
+#   scripts/ios-debug.sh tabs          list inspectable targets and exit
+#   scripts/ios-debug.sh launch [url]  open a tab on the device (connectivity test)
+#   scripts/ios-debug.sh cdp           start the bridge (default)
+#
+# The device needs BOTH Web Inspector and Remote Automation enabled. With only the
+# first, the connection succeeds and the target list comes back empty.
 #
 # The `tabs` command is what answers the open question in the plan: whether Edge's
 # WKWebView is inspectable at all. Third-party webviews only appear if the app opted in
@@ -121,10 +125,13 @@ else
 fi
 
 say ""
-say "On the phone, Web Inspector must be ON:"
-say "  iOS 18+   Settings > Apps > Safari > Advanced > Web Inspector"
-say "  iOS 17-   Settings > Safari > Advanced > Web Inspector"
-say "This is a device setting, not a Mac one, and it gates every target below."
+say "On the phone, BOTH of these must be ON (iOS 18+ path shown; on iOS 17 and"
+say "earlier the same items live under Settings > Safari > Advanced):"
+say "  Settings > Apps > Safari > Advanced > Web Inspector"
+say "  Settings > Apps > Safari > Advanced > Remote Automation"
+say "pymobiledevice3 requires both. With Web Inspector alone the connection"
+say "succeeds and the target list comes back empty, which reads like a bug but"
+say "is a device setting. These are device settings, not Mac ones."
 say ""
 
 if [ "$fail" -ne 0 ]; then
@@ -135,20 +142,46 @@ fi
 case "$CMD" in
   check)
     say "Chain complete. Next: scripts/ios-debug.sh tabs"
+    say "If that lists nothing, check Remote Automation is on, then try:"
+    say "    scripts/ios-debug.sh launch https://m.youtube.com/"
     ;;
 
   tabs)
     say "Inspectable targets. Safari tabs appear automatically; a third-party"
     say "browser appears only if that app opted into being inspectable."
     say ""
-    "$PMD3_BIN" webinspector opened-tabs || {
+    # Capture rather than stream: an empty list exits 0 and prints nothing, which is
+    # indistinguishable from a hang. Zero targets is a real answer and deserves saying.
+    if ! out="$("$PMD3_BIN" webinspector opened-tabs 2>&1)"; then
+      printf '%s\n' "$out"
       say ""
-      say "No targets, or the listing failed. Two likely causes:"
-      say "  - Web Inspector is off on the device, or no browser tab is open."
-      say "  - iOS 17+ moved developer services behind an RSD tunnel. If the error"
-      say "    mentions a tunnel or RemoteXPC, that is this, not a missing device."
+      say "The listing failed. If the error mentions a tunnel, RemoteXPC or RSD,"
+      say "that is iOS 17+ relocating developer services, not a missing device."
       exit 1
-    }
+    fi
+    if [ -z "${out//[[:space:]]/}" ]; then
+      say "No targets, and no error. That combination is almost always a device"
+      say "setting rather than a connection problem, because everything above"
+      say "this line already passed. Check in order:"
+      say ""
+      say "  1. Remote Automation is ON, not just Web Inspector. This is the"
+      say "     usual cause: Web Inspector alone connects but lists nothing."
+      say "  2. A tab is genuinely open and loaded in the browser."
+      say "  3. The phone is unlocked with the browser in the foreground."
+      say ""
+      say "To prove the link end to end, open a tab from this machine:"
+      say "    $0 launch https://m.youtube.com/"
+      exit 1
+    fi
+    printf '%s\n' "$out"
+    ;;
+
+  launch)
+    # Opens a tab on the device from here. Doubles as the connectivity test: if this
+    # works, the transport is fine and any empty tab list is a device setting.
+    url="${2:-https://m.youtube.com/}"
+    say "Opening in Safari on the device: $url"
+    exec "$PMD3_BIN" webinspector launch "$url"
     ;;
 
   cdp)
@@ -165,7 +198,7 @@ case "$CMD" in
 
   *)
     say "unknown command: $CMD"
-    say "usage: scripts/ios-debug.sh [check|tabs|cdp]"
+    say "usage: scripts/ios-debug.sh [check|tabs|launch <url>|cdp]"
     exit 2
     ;;
 esac

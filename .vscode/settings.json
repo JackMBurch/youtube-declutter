@@ -1,0 +1,18 @@
+{
+  "workbench.colorCustomizations": {
+    "editor.foreground": "#b6b6b6",
+    "editorCursor.foreground": "#b6b6b6",
+    "foreground": "#b6b6b6",
+    "terminal.foreground": "#b6b6b6",
+    "terminal.background": "#000000",
+    "terminal.ansiYellow": "#ffc800",
+    "terminal.ansiBrightBlue": "#1e78e4",
+    "terminal.ansiRed": "#c20000",
+    "terminal.ansiBrightRed": "#c20000",
+    "errorForeground": "#c20000",
+    "list.errorForeground": "#c20000",
+    "terminal.ansiBrightGreen": "#2ec27e",
+    "terminal.ansiGreen": "#2ec27e",
+    "panel.background": "#000000"
+  }
+}

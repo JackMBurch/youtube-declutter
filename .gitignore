@@ -1,0 +1,18 @@
+# Local agent permissions and machine-specific overrides. The shared settings.json
+# is tracked; this file is not, by design.
+.claude/settings.local.json
+
+# One-shot scripts: written to be read before they are run, then deleted.
+# Throwaway is not the same as unexplained, so these carry a header comment
+# explaining what they do - but they are never part of the repo's history.
+scratch/
+
+# Dev-loop artifacts (see dev/serve.py). Certificates are machine-local and
+# must not be shared.
+dev/certs/
+*.pem
+
+# Editor and OS cruft
+.DS_Store
+*.swp
+*~

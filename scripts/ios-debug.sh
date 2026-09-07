@@ -12,8 +12,9 @@
 #   scripts/ios-debug.sh launch [url]  open a tab on the device (connectivity test)
 #   scripts/ios-debug.sh cdp           start the bridge (default)
 #
-# The device needs BOTH Web Inspector and Remote Automation enabled. With only the
-# first, the connection succeeds and the target list comes back empty.
+# Web Inspector must be on for any target to be listed. Remote Automation is additionally
+# needed for `launch`, which opens a session. An empty list with no error usually means no
+# foregrounded tab rather than a broken connection.
 #
 # The `tabs` command is what answers the open question in the plan: whether Edge's
 # WKWebView is inspectable at all. Third-party webviews only appear if the app opted in
@@ -125,13 +126,10 @@ else
 fi
 
 say ""
-say "On the phone, BOTH of these must be ON (iOS 18+ path shown; on iOS 17 and"
-say "earlier the same items live under Settings > Safari > Advanced):"
-say "  Settings > Apps > Safari > Advanced > Web Inspector"
-say "  Settings > Apps > Safari > Advanced > Remote Automation"
-say "pymobiledevice3 requires both. With Web Inspector alone the connection"
-say "succeeds and the target list comes back empty, which reads like a bug but"
-say "is a device setting. These are device settings, not Mac ones."
+say "Device settings (iOS 18+ path; on iOS 17 and earlier the same items live"
+say "under Settings > Safari > Advanced). These are device settings, not Mac ones:"
+say "  Web Inspector      gates the target list. Required."
+say "  Remote Automation  only needed for 'launch', which drives a session."
 say ""
 
 if [ "$fail" -ne 0 ]; then
@@ -142,7 +140,7 @@ fi
 case "$CMD" in
   check)
     say "Chain complete. Next: scripts/ios-debug.sh tabs"
-    say "If that lists nothing, check Remote Automation is on, then try:"
+    say "If that lists nothing, open a tab on the phone, or prove the link with:"
     say "    scripts/ios-debug.sh launch https://m.youtube.com/"
     ;;
 
@@ -164,16 +162,40 @@ case "$CMD" in
       say "setting rather than a connection problem, because everything above"
       say "this line already passed. Check in order:"
       say ""
-      say "  1. Remote Automation is ON, not just Web Inspector. This is the"
-      say "     usual cause: Web Inspector alone connects but lists nothing."
-      say "  2. A tab is genuinely open and loaded in the browser."
-      say "  3. The phone is unlocked with the browser in the foreground."
+      say "  1. A tab is genuinely open and loaded in the browser."
+      say "  2. The phone is unlocked with the browser in the foreground."
+      say "  3. Web Inspector is ON. Remote Automation is not needed here, but is"
+      say "     required for 'launch' below."
       say ""
       say "To prove the link end to end, open a tab from this machine:"
       say "    $0 launch https://m.youtube.com/"
       exit 1
     fi
     printf '%s\n' "$out"
+
+    # Each line is <AppName(pid) TYPE:... URL:...>, so the owning application is already
+    # in the output. Summarise by app rather than leaving the reader to count lines:
+    # "more tabs appeared" is ambiguous, "Edge owns 3 of them" is not.
+    apps="$(printf '%s\n' "$out" | sed -n 's/^<\([^(]*\)(.*/\1/p' | sort)"
+    if [ -n "$apps" ]; then
+      say ""
+      say "By application:"
+      printf '%s\n' "$apps" | uniq -c | sed 's/^ */    /'
+
+      others="$(printf '%s\n' "$apps" | sort -u | grep -vi 'safari' || true)"
+      say ""
+      if [ -n "$others" ]; then
+        say "A non-Safari app exposed inspectable web content:"
+        printf '    %s\n' $others
+        say ""
+        say "That means the app opted into isInspectable, so it can be debugged"
+        say "directly. Point Chromium at it with: $0 cdp"
+      else
+        say "Only Safari appeared. Nothing else opted into being inspectable, so"
+        say "debug in Safari and keep deploying to the other browser: both are"
+        say "WebKit on iOS, so nearly every bug reproduces in Safari."
+      fi
+    fi
     ;;
 
   launch)

@@ -7,10 +7,14 @@
 # DevTools Protocol, so Chromium becomes the client instead of Safari-on-a-Mac.
 #
 # Usage:
-#   scripts/ios-debug.sh check         verify the whole chain without starting anything
-#   scripts/ios-debug.sh tabs          list inspectable targets and exit
-#   scripts/ios-debug.sh launch [url]  open a tab on the device (connectivity test)
-#   scripts/ios-debug.sh cdp           start the bridge (default)
+#   scripts/ios-debug.sh check          verify the whole chain without starting anything
+#   scripts/ios-debug.sh tabs           list inspectable targets and exit
+#   scripts/ios-debug.sh launch [url]   open a tab on the device (connectivity test)
+#   scripts/ios-debug.sh cdp [port]     start the bridge (default; port defaults to 9222)
+#   scripts/ios-debug.sh open [port]    open Chrome on the bridge's landing page
+#
+# 9222 is the conventional CDP port and is often already taken by another debug session.
+# With no port given, the bridge steps to the next free one rather than failing to bind.
 #
 # Web Inspector must be on for any target to be listed. Remote Automation is additionally
 # needed for `launch`, which opens a session. An empty list with no error usually means no
@@ -26,12 +30,46 @@
 set -euo pipefail
 
 CMD="${1:-cdp}"
-PORT="${PORT:-9222}"
+
+# Port precedence: positional arg, then $PORT, then 9222. Track whether one was actually
+# asked for: an explicit port that is busy is an error worth reporting, but the default
+# being busy is common and worth stepping past silently.
+PORT_REQUESTED=0
+if [ -n "${2:-}" ] && [ "$CMD" != "launch" ]; then
+  PORT="$2"; PORT_REQUESTED=1
+elif [ -n "${PORT:-}" ]; then
+  PORT_REQUESTED=1
+else
+  PORT=9222
+fi
 
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '  ok    %s\n' "$*"; }
 bad()  { printf '  FAIL  %s\n' "$*"; }
 note() { printf '        %s\n' "$*"; }
+
+# Bash's /dev/tcp: connecting succeeds only if something is listening.
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
+
+find_browser() {
+  for b in google-chrome-stable google-chrome chromium chromium-browser; do
+    command -v "$b" >/dev/null 2>&1 && { printf '%s\n' "$b"; return 0; }
+  done
+  return 1
+}
+
+# `open` only needs a browser, not the phone, so handle it before the device checks.
+if [ "$CMD" = "open" ]; then
+  url="http://127.0.0.1:${PORT}/"
+  if ! browser="$(find_browser)"; then
+    say "No Chrome or Chromium found. The landing page needs a Chrome-family"
+    say "browser: its DevTools frontend is what actually renders the session."
+    exit 1
+  fi
+  port_busy "$PORT" || say "Note: nothing is listening on $PORT yet. Start the bridge first."
+  say "Opening $url in $browser"
+  exec "$browser" "$url"
+fi
 
 fail=0
 
@@ -207,20 +245,35 @@ case "$CMD" in
     ;;
 
   cdp)
+    if port_busy "$PORT"; then
+      if [ "$PORT_REQUESTED" -eq 1 ]; then
+        bad "port $PORT is already in use"
+        note "another CDP session is probably holding it; pick another:"
+        note "  $0 cdp $((PORT + 1))"
+        exit 1
+      fi
+      start="$PORT"
+      while port_busy "$PORT"; do PORT=$((PORT + 1)); done
+      say "Port $start is in use, so using $PORT instead."
+      say ""
+    fi
     say "Starting the CDP bridge on 127.0.0.1:${PORT}."
-    say "Open this in Chromium and pick a target:"
+    say "Open this in Chrome and pick a target:"
     say ""
     say "    http://127.0.0.1:${PORT}/"
+    say ""
+    say "From another terminal, this opens it for you:"
+    say "    $0 open ${PORT}"
     say ""
     say "Note: WebKit allows one inspector session per page, so close any other"
     say "debugger holding the same tab. Ctrl-C here stops the bridge."
     say ""
-    exec "$PMD3_BIN" webinspector cdp
+    exec "$PMD3_BIN" webinspector cdp --port "$PORT"
     ;;
 
   *)
     say "unknown command: $CMD"
-    say "usage: scripts/ios-debug.sh [check|tabs|launch <url>|cdp]"
+    say "usage: scripts/ios-debug.sh [check|tabs|launch <url>|cdp [port]|open [port]]"
     exit 2
     ;;
 esac

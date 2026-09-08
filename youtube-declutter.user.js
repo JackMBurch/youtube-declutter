@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Declutter
 // @namespace    local.yt-declutter
-// @version      1.0.17
+// @version      1.1.0
 // @description  Declutter YouTube on mobile and desktop. Customisable sidebar, yoodle replacement, Shorts and community post hiding, backup and restore.
 // @license      MIT
 // @copyright    2026, Jack Burch
@@ -17,7 +17,7 @@
   'use strict';
 
   const APP = 'yt-declutter';
-  const VERSION = '1.0.17';
+  const VERSION = '1.1.0';
 
   const SCHEMA = 1;
   const STORE = 'ytdc.settings';

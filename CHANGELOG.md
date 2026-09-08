@@ -8,6 +8,8 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-07
+
 ### Changed
 
 - Renamed the script file from `youtube-decultter.user.js` to `youtube-declutter.user.js`,

@@ -18,6 +18,12 @@
 //   --out     JSONL output path. Default: dev/logs/console.jsonl
 //   --quiet   do not echo to stdout (the file still gets everything)
 //   --once    exit when the bridge goes away instead of waiting for it to come back
+//   --all     keep content-blocker noise, which is filtered out by default
+//   --exclude comma-separated extra regexes to drop
+//   --max-text truncate a message past this many characters. Default: 400
+//
+// WARNING: WebKit allows one inspector session per page. Running this detaches an open
+// DevTools window on the same target. Use one or the other, not both.
 //   --cmd-dir directory watched for *.js to evaluate on the page. Default: dev/cmd
 //   --no-cmd  disable the command channel (logs only)
 //
@@ -44,6 +50,24 @@ const FIXED_PORT = flag('port', null)
 const CMD_DIR = resolve(flag('cmd-dir', 'dev/cmd'))
 const RESULTS = resolve(flag('results', 'dev/logs/results.jsonl'))
 const CMD_ON = !has('no-cmd')
+const SHOW_ALL = has('all')
+const MAX_TEXT = Number(flag('max-text', 400))
+
+// YouTube with a content blocker produces a continuous stream of blocked-resource errors -
+// in one 12s sample they were about 90% of all output, and every one is relayed over USB,
+// which is what makes an attached DevTools crawl. They say nothing about this userscript,
+// so drop them by default. --all keeps everything; --exclude adds patterns.
+const DEFAULT_NOISE = [
+  /Content blocker prevented/i,
+  /Resource blocked by content blocker/i,
+  /due to access control checks/i,
+  /console messages are not shown/i
+]
+const EXTRA_NOISE = (flag('exclude', '') || '')
+  .split(',').filter(Boolean).map((p) => new RegExp(p, 'i'))
+const NOISE = [...DEFAULT_NOISE, ...EXTRA_NOISE]
+
+const isNoise = (text) => !SHOW_ALL && !!text && NOISE.some((re) => re.test(text))
 
 // Rotate rather than grow without bound. A long session on a page that logs in a loop can
 // produce a lot, and an unreadable 500MB file helps nobody.
@@ -56,6 +80,12 @@ let nextId = 1
 const now = () => new Date().toISOString()
 
 async function write (record) {
+  if (isNoise(record.text)) return
+  // Those blocked-resource URLs run to thousands of characters of query string and make
+  // both the terminal and the file unreadable. Keep the head, which identifies it.
+  if (typeof record.text === 'string' && record.text.length > MAX_TEXT) {
+    record = { ...record, text: record.text.slice(0, MAX_TEXT) + `... [+${record.text.length - MAX_TEXT} chars]` }
+  }
   const line = JSON.stringify({ ts: now(), ...record })
   if (!QUIET) {
     const where = record.url ? ` ${String(record.url).replace(/^https?:\/\//, '').slice(0, 40)}` : ''
@@ -269,7 +299,13 @@ async function main () {
         continue
       }
       warnedNoBridge = false
+      console.error('')
+      console.error('  !  WebKit allows ONE inspector session per page. Attaching here will')
+      console.error('     detach an open DevTools window on the same target, and vice versa.')
+      console.error('     Close the DevTools tab before relying on this.')
+      console.error('')
       console.error(`collecting from 127.0.0.1:${port}, filter "${FILTER}" -> ${OUT}`)
+      if (!SHOW_ALL) console.error('filtering content-blocker noise; --all to keep everything')
       if (CMD_ON) console.error(`command channel: drop *.js in ${CMD_DIR}, results -> ${RESULTS}`)
     }
 

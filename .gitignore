@@ -11,6 +11,9 @@ scratch/
 # the page logged, so it is deliberately not committed.
 dev/logs/
 
+# Agent command files and their .done markers; per-session, never shared.
+dev/cmd/
+
 # Dev-loop artifacts (see dev/serve.py). Certificates are machine-local and
 # must not be shared.
 dev/certs/

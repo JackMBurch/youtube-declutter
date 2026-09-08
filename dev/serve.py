@@ -70,11 +70,33 @@ LOADER_TEMPLATE = """// ==UserScript==
   var SRC = '{base}/{file}';
   var TAG = '[ytdc-loader]';
 
+  // YouTube serves require-trusted-types-for 'script', so eval() refuses a plain string:
+  // "Refused to evaluate a string as JavaScript because this document requires a 'Trusted
+  // Type' assignment". A policy whose createScript returns the source unchanged satisfies
+  // that. Creating one is permitted on this document (probed on the device), and the page
+  // itself uses the same mechanism. Named and cached, because createPolicy throws if the
+  // same name is registered twice in one document.
+  function asTrustedScript(code) {{
+    try {{
+      if (window.trustedTypes && window.trustedTypes.createPolicy) {{
+        if (!window.__ytdcPolicy) {{
+          window.__ytdcPolicy = window.trustedTypes.createPolicy(
+            'ytdc-dev', {{ createScript: function (s) {{ return s; }} }});
+        }}
+        return window.__ytdcPolicy.createScript(code);
+      }}
+    }} catch (e) {{
+      console.warn(TAG, 'no Trusted Types policy (' + (e && e.message) + '); trying raw');
+    }}
+    return code;
+  }}
+
   function run(code, how) {{
     try {{
       // Indirect eval, so the script evaluates in global scope exactly as a userscript
       // manager would run it, rather than inside this function's closure.
-      (0, eval)(code);
+      (0, eval)(asTrustedScript(code));
+      window.__ytdcLoaded = {{ at: new Date().toISOString(), chars: code.length, via: how }};
       console.info(TAG, 'loaded', code.length, 'chars via', how);
     }} catch (e) {{
       console.error(TAG, 'the script threw while starting:', e && e.message, e);

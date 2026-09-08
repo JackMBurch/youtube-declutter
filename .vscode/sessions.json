@@ -11,21 +11,28 @@
         "autoExecuteCommands": true,
         "icon": "debug-console",
         "color": "terminal.ansiGreen",
-        "commands": ["./scripts/ios-debug.sh cdp"]
+        "commands": [
+          "./scripts/ios-debug.sh cdp"
+        ]
       },
       {
-        "name": "logs",
-        "autoExecuteCommands": true,
+        "name": "logs-agent",
+        "autoExecuteCommands": false,
         "icon": "output",
         "color": "terminal.ansiYellow",
-        "commands": ["./scripts/ios-log.mjs"]
+        "commands": [
+          "# One inspector session per page: close the DevTools tab before running this.",
+          "./scripts/ios-log.mjs"
+        ]
       },
       {
         "name": "launch-chrome",
         "autoExecuteCommands": true,
         "icon": "debug-console",
         "color": "terminal.ansiBlue",
-        "commands": ["./scripts/ios-debug.sh open 9223"]
+        "commands": [
+          "./scripts/ios-debug.sh open 9223"
+        ]
       }
     ]
   }

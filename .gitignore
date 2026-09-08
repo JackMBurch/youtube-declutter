@@ -16,6 +16,9 @@ dev/logs/
 dev/certs/
 *.pem
 
+# Backups written by the one-shot scripts in scratch/ before they edit anything.
+*.bak
+
 # Editor and OS cruft
 .DS_Store
 *.swp

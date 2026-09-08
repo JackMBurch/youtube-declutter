@@ -46,8 +46,27 @@ since the script requests no `GM_*` privileges.
 
 ## Development
 
+Editing this on a phone by copy/paste is unbearable, so `dev/serve.py` serves the working
+copy and a generated loader fetches it on every page load. Open the printed address on the
+phone and import the loader URL once; after that, saving here and reloading there is the
+whole cycle. The same page offers a plain copy of the script for when you are not debugging.
+
+```
+python3 dev/serve.py            # serve the script and the loader
+scripts/ios-debug.sh cdp        # DevTools over USB, from Linux
+scripts/ios-log.mjs             # stream the device console to a file
+node tests/run.mjs              # the checks that do not need a phone
+scripts/release.sh minor        # bump both version fields together
+```
+
+`scripts/ios-debug.sh` uses `pymobiledevice3` to bridge Apple's Web Inspector protocol to
+the Chrome DevTools Protocol, so a Linux machine can debug the phone; Safari's Develop menu
+is not required and neither is a Mac.
+
 The version is declared twice, in `@version` and in `const VERSION`, and the two must not
-drift. From the release tooling onward, that is enforced rather than remembered.
+drift: a manager decides whether to update by comparing `@version`, while the boot line and
+debug sheet report `const VERSION`. `scripts/release.sh` is the only thing that should write
+either, and CI fails a pull request that changes the script without raising the version.
 
 Working notes, plans and epic trackers live in `.workspace/`, which is a separate git
 repository excluded from this one. See `.workspace/README.md`.

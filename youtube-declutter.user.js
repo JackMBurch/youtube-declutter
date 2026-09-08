@@ -105,6 +105,7 @@
       addExtraItems: true,
       backgroundPlay: false,
       pipButton: false,
+      stopPreviews: false,
       feedMode: 'off',
     },
     logo: null,
@@ -132,6 +133,10 @@
       'Stops YouTube pausing when you switch tabs inside the browser. Takes effect on the '
       + 'next page load. It cannot help when you leave the browser or lock the screen: iOS '
       + 'suspends the page, and only Picture in Picture survives that.'],
+    stopPreviews: ['Stop video previews',
+      'Stops thumbnails playing a silent preview. On a phone these mostly start by accident '
+      + 'while scrolling, and they cost data and battery. The video you actually open is '
+      + 'never affected. Off by default: turn it on and check the player still plays.'],
     pipButton: ['Picture in Picture button',
       'Adds a PiP button to the player. iOS only allows PiP from a real tap, so this cannot '
       + 'be automatic - tap it before leaving the app, and audio keeps going.'],
@@ -283,6 +288,52 @@
     hidden: S.sidebar.hidden.length,
     recovery: recoveryNote.trim() || undefined,
   }));
+
+  // =================================================================
+  // PREVIEWS
+  //
+  // Thumbnails play a silent preview when they think you are interested. On a phone that
+  // mostly happens by accident while scrolling, and it costs data and battery.
+  //
+  // Matched by structure rather than by class name: YouTube renames its classes often, and
+  // this had to be written without a device to check against. A preview is any video that
+  // starts playing while it is not inside a real player container - which stays true
+  // however the markup is spelled. Anything unexpected is treated as the main player and
+  // left alone, so the failure mode is "does nothing", never "breaks playback".
+  // =================================================================
+  const PLAYER_HOSTS = '#movie_player, ytm-player, ytd-player, ytm-watch, #player, ' +
+    '.html5-video-player, ytd-watch-flexy, #player-container';
+  let previewsStopped = 0;
+
+  const isMainPlayer = (v) => {
+    try { return !v.closest || !!v.closest(PLAYER_HOSTS); } catch (e) { return true; }
+  };
+
+  const stopPreview = (v) => {
+    if (!S.features.stopPreviews || !(v instanceof HTMLMediaElement)) return;
+    if (isMainPlayer(v)) return;
+    try {
+      v.autoplay = false;
+      v.preload = 'none';
+      if (!v.paused) v.pause();
+      previewsStopped++;
+      // Only the first few: every line crosses a USB debug bridge, and a feed can produce
+      // these continuously while scrolling.
+      if (previewsStopped <= 3) {
+        LOG('preview stopped (' + previewsStopped + ')',
+          (v.parentElement && v.parentElement.tagName || '?').toLowerCase());
+      }
+    } catch (e) { WARN('could not stop a preview:', e && e.message); }
+  };
+
+  document.addEventListener('play', (e) => stopPreview(e.target), true);
+  document.addEventListener('playing', (e) => stopPreview(e.target), true);
+
+  // Catch anything already rolling when the setting is switched on mid-session.
+  const sweepPreviews = () => {
+    if (!S.features.stopPreviews) return;
+    for (const v of document.querySelectorAll('video')) if (!v.paused) stopPreview(v);
+  };
 
   function togglePip() {
     const v = mainVideo();
@@ -912,8 +963,9 @@
         const [t, d] = FEATURE_INFO[key];
         card.appendChild(optRow(!!S.features[key], t, d, (v) => {
           S.features[key] = v; save(); restyle(); lastOrderApplied = '';
-          // The button is mounted imperatively rather than by CSS, so it needs telling.
+          // Both of these are imperative rather than CSS, so they need telling.
           mountPip();
+          sweepPreviews();
         }));
       }
       const s2 = document.createElement('div');
@@ -1024,6 +1076,7 @@
     const root = findDrawer();
     L.push(`${APP} ${VERSION}  schema ${S.schema}`);
     L.push(`path ${location.pathname}  applies ${applies}/${MAX_APPLIES}${bailed ? ' BAILED' : ''}`);
+    L.push(`previews stopped ${previewsStopped}  stopPreviews ${S.features.stopPreviews}`);
     L.push(`editing ${editing}  safeMode ${SAFE_MODE}  seeded ${S.sidebar.seeded}`);
     L.push(`logo ${S.logo ? S.logo.html.length + 'ch' : 'none'}  sponsorblock ${S.checks.sponsorblock}`);
     L.push(`hidden(${S.sidebar.hidden.length}) ${JSON.stringify(S.sidebar.hidden)}`);
@@ -1112,6 +1165,7 @@
     if (!document.getElementById(STYLE_ID)) restyle();
     syncHome();
     mountPip();
+    sweepPreviews();
     // Navigation resets the guards so nothing latches across pages.
     applies = 0; bailed = false; lastOrderApplied = '';
     if (editing && (!editRoot || !editRoot.isConnected)) {

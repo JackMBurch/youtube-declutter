@@ -1,0 +1,59 @@
+name: validate
+
+# Almost everything here can only be judged on a phone. These are the few things a machine
+# can judge, and they are exactly the ones that have gone wrong before: a version that
+# drifted between its two homes, and a raw innerHTML assignment that YouTube's Trusted
+# Types policy rejects - which does not fail quietly, it makes the page reload in a loop.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run checks
+        run: node tests/run.mjs
+
+      - name: Version must be bumped when the script changes
+        # A change to the script that keeps the same version means anyone already running it
+        # never receives the change: Greasy Fork and every userscript manager decide whether
+        # to update by comparing @version, and nothing else.
+        #
+        # BASE_REF goes through the environment rather than being interpolated into the
+        # script. A branch name is attacker-influenced on a pull request, and interpolation
+        # would splice it straight into the shell.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin -- "$BASE_REF"
+          if git diff --quiet FETCH_HEAD -- youtube-declutter.user.js; then
+            echo "script unchanged, no bump needed"
+            exit 0
+          fi
+          old=$(git show FETCH_HEAD:youtube-declutter.user.js | grep -m1 '^// @version' | awk '{print $3}')
+          new=$(grep -m1 '^// @version' youtube-declutter.user.js | awk '{print $3}')
+          echo "base $old -> head $new"
+          if [ "$old" = "$new" ]; then
+            echo "::error::The script changed but @version is still $old. Run scripts/release.sh."
+            exit 1
+          fi
+          # Sorting the pair and taking the last confirms the new one is the higher.
+          highest=$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -1)
+          if [ "$highest" != "$new" ]; then
+            echo "::error::@version went backwards: $old -> $new"
+            exit 1
+          fi

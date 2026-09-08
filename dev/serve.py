@@ -70,8 +70,15 @@ LOADER_TEMPLATE = """// ==UserScript==
 (function () {{
   'use strict';
 
-  var SRC = '{base}/{file}';
   var TAG = '[ytdc-loader]';
+
+  // Stay runs this twice per load on iOS - its own console output says so. Fetching and
+  // evaluating the script twice is worth avoiding on its own; the script guards itself as
+  // well, but doing it here saves a second request and a second parse of 50KB.
+  if (window.__ytdcLoader) {{ console.info(TAG, 'already loaded; second copy stood down'); return; }}
+  window.__ytdcLoader = true;
+
+  var SRC = '{base}/{file}';
 
   // YouTube serves require-trusted-types-for 'script', so eval() refuses a plain string:
   // "Refused to evaluate a string as JavaScript because this document requires a 'Trusted

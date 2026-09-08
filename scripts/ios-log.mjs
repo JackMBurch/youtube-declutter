@@ -151,9 +151,10 @@ function attach (target, port) {
   attached.set(target.id, ws)
 
   ws.addEventListener('open', () => {
-    // Console.enable is the legacy domain and WebKit still reports some entries only there,
-    // so enable all three rather than assuming Runtime covers everything.
-    for (const method of ['Runtime.enable', 'Log.enable', 'Console.enable', 'Page.enable']) {
+    // Runtime and Log only. Enabling the legacy Console domain as well made the bridge
+    // deliver every message twice, which read as the page executing twice - the most
+    // alarming possible artifact for a script whose failure mode is duplicate observers.
+    for (const method of ['Runtime.enable', 'Log.enable', 'Page.enable']) {
       ws.send(JSON.stringify({ id: nextId++, method }))
     }
     write({ kind: 'attached', level: 'meta', text: `attached to ${target.url}`, url: target.url })

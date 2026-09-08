@@ -17,6 +17,7 @@
 
   const APP = 'yt-declutter';
   const VERSION = '1.0.17';
+
   const SCHEMA = 1;
   const STORE = 'ytdc.settings';
 
@@ -64,6 +65,29 @@
   const LOG = (...a) => { try { console.info('[ytdc]', ...a); } catch (e) {} };
   const WARN = (...a) => { try { console.warn('[ytdc]', ...a); } catch (e) {} };
 
+  // YouTube sets require-trusted-types-for 'script', which covers innerHTML as well as
+  // eval: assigning a plain string throws "This assignment requires a TrustedHTML" and
+  // every icon in this file is an inline SVG string. Route them through a policy that
+  // returns the markup unchanged - the same thing the page does for its own templates.
+  //
+  // This is not cosmetic. The throw happened inside the observer that reacts to YouTube's
+  // DOM churn, so it fired repeatedly, and Stay reacted by abandoning its page-world
+  // injection and falling back to a content-world one - which is why the script appeared
+  // to run twice.
+  let htmlPolicy;
+  const setHTML = (el, html) => {
+    try {
+      if (htmlPolicy === undefined) {
+        htmlPolicy = (window.trustedTypes && window.trustedTypes.createPolicy)
+          ? window.trustedTypes.createPolicy('ytdc-html', { createHTML: (s) => s })
+          : null;
+      }
+    } catch (e) { htmlPolicy = null; WARN('no TrustedHTML policy:', e && e.message); }
+    try {
+      el.innerHTML = htmlPolicy ? htmlPolicy.createHTML(html) : html
+    } catch (e) { WARN('setHTML failed:', e && e.message); }
+  };
+
   // =================================================================
   // SETTINGS
   // =================================================================
@@ -78,6 +102,8 @@
       replaceYoodle: true,
       customiseSidebar: true,
       addExtraItems: true,
+      backgroundPlay: false,
+      pipButton: false,
       feedMode: 'off',
     },
     logo: null,
@@ -101,6 +127,13 @@
       'Enables the editor for hiding and reordering sidebar entries.'],
     addExtraItems: ['Add extra sidebar items',
       'Adds Subscriptions, Watch later and Playlists to the sidebar.'],
+    backgroundPlay: ['Keep playing in background tabs',
+      'Stops YouTube pausing when you switch tabs inside the browser. It cannot help when '
+      + 'you leave the browser or lock the screen: iOS suspends the page, and only Picture '
+      + 'in Picture survives that.'],
+    pipButton: ['Picture in Picture button',
+      'Adds a PiP button to the player. iOS only allows PiP from a real tap, so this cannot '
+      + 'be automatic - tap it before leaving the app, and audio keeps going.'],
   };
   const FEED_INFO = ['Home feed', {
     off: 'Leave the home feed alone.',
@@ -119,6 +152,7 @@
     gear: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 8.6A3.4 3.4 0 1 0 12 15.4 3.4 3.4 0 0 0 12 8.6zm8.2 4.6l1.9 1.5-1.9 3.2-2.3-.9a7.6 7.6 0 0 1-1.9 1.1l-.3 2.4h-3.8l-.3-2.4a7.6 7.6 0 0 1-1.9-1.1l-2.3.9-1.9-3.2 1.9-1.5a7.4 7.4 0 0 1 0-2.4L1.6 9.3l1.9-3.2 2.3.9a7.6 7.6 0 0 1 1.9-1.1l.3-2.4h3.8l.3 2.4c.7.26 1.32.63 1.9 1.1l2.3-.9 1.9 3.2-1.9 1.5c.06.4.09.8.09 1.2s-.03.8-.09 1.2z"/></svg>',
     pencil: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
     bug: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 8h-2.8a5 5 0 0 0-1.2-1.5l1.6-1.7-1.4-1.4-1.9 1.9a5.3 5.3 0 0 0-4.6 0L7.8 3.4 6.4 4.8 8 6.5A5 5 0 0 0 6.8 8H4v2h2.1v1.5H4v2h2.1V15H4v2h2.8a5.2 5.2 0 0 0 10.4 0H20v-2h-2.1v-1.5H20v-2h-2.1V10H20V8zm-6 9h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>',
+    pip: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.6" y="4.6" width="18.8" height="14.8" rx="2.2"/><rect x="12.4" y="11.4" width="7.6" height="6.4" rx="1.4" fill="currentColor" stroke="none"/></svg>',
     grip: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
   };
 
@@ -167,10 +201,67 @@
   }
   if (SAFE_MODE) recoveryNote += ' Safe mode is active (sidebar features off).';
 
-  // The one unconditional line: enough to identify which build is running and in what
-  // state, so a report of "it stopped working" can be checked rather than guessed at.
-  // Stringified, not passed as an object: this line is read through a remote inspector,
-  // and an object argument arrives there as its class name with the contents dropped.
+  // =================================================================
+  // PLAYBACK
+  //
+  // Two separate problems, and only one of them is ours to solve.
+  //
+  // Switching tabs inside the browser: YouTube pauses because it watches
+  // document.hidden and visibilitychange. Lying about both keeps playback going. The
+  // technique is the one in Greasy Fork script 560972 (CC-BY-4.0), reimplemented here
+  // rather than copied - it is about thirty lines and this file is MIT.
+  //
+  // Leaving the browser, or locking the screen: not fixable this way. iOS suspends the
+  // page, and no amount of lying about visibility prevents suspension. Only Picture in
+  // Picture keeps audio alive, and iOS grants PiP only from a real tap - a scripted call
+  // is refused silently, returning normally while the mode stays 'inline' (verified on
+  // device). Hence a button rather than anything automatic.
+  // =================================================================
+  const VIDEO_SEL = '#movie_player video, ytm-player video, ytd-player video, video';
+  const mainVideo = () => document.querySelector(VIDEO_SEL);
+
+  if (S.features.backgroundPlay) {
+    // Define over the prototype's getter rather than the instance so that reads through
+    // Document.prototype see it too, and swallow the events at capture so YouTube's own
+    // listeners never run.
+    const lie = (obj, prop, value) => {
+      try {
+        Object.defineProperty(obj, prop, { configurable: true, get: () => value });
+      } catch (e) { WARN('could not mask', prop, e && e.message); }
+    };
+    lie(Document.prototype, 'hidden', false);
+    lie(Document.prototype, 'webkitHidden', false);
+    lie(Document.prototype, 'visibilityState', 'visible');
+    lie(Document.prototype, 'webkitVisibilityState', 'visible');
+
+    const swallow = (e) => { e.stopImmediatePropagation(); e.stopPropagation(); };
+    for (const type of ['visibilitychange', 'webkitvisibilitychange']) {
+      window.addEventListener(type, swallow, true);
+      document.addEventListener(type, swallow, true);
+    }
+  }
+
+  // Run the rest once per document.
+  //
+  // Stay injects this script twice on one load - its own console says "Run script" twice -
+  // and the two copies get separate JavaScript contexts, so a flag on `window` is invisible
+  // to the other. The DOM is the only thing they share, so the marker lives there.
+  //
+  // Deliberately placed *after* the visibility patch above. Only a copy running in the
+  // page's own world can hide document.hidden from YouTube's code, and there is no way to
+  // tell from in here which world this is - so both copies patch, and whichever arrives
+  // first takes the observers and the UI. Everything above this point is read-only or
+  // idempotent, so running it twice costs nothing.
+  const RAN = 'data-ytdc';
+  if (document.documentElement.hasAttribute(RAN)) {
+    LOG('second copy stood down; already initialised by', document.documentElement.getAttribute(RAN));
+    return;
+  }
+  document.documentElement.setAttribute(RAN, VERSION);
+
+  // Enough to identify which build is running and in what state, so "it stopped working"
+  // can be checked rather than guessed at. Stringified, not an object: an object argument
+  // reaches a remote inspector as its class name with the contents dropped.
   LOG('boot', VERSION, JSON.stringify({
     path: location.pathname,
     safeMode: SAFE_MODE,
@@ -179,6 +270,53 @@
     hidden: S.sidebar.hidden.length,
     recovery: recoveryNote.trim() || undefined,
   }));
+
+  function togglePip() {
+    const v = mainVideo();
+    if (!v) { WARN('pip: no video element on', location.pathname); return; }
+    try { v.disablePictureInPicture = false; } catch (e) {}
+    try {
+      if (typeof v.webkitSetPresentationMode === 'function') {
+        // The iOS spelling. Toggles, so a second tap returns the video inline.
+        v.webkitSetPresentationMode(
+          v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+      } else if (document.pictureInPictureElement) {
+        document.exitPictureInPicture();
+      } else if (typeof v.requestPictureInPicture === 'function') {
+        v.requestPictureInPicture();
+      } else {
+        WARN('pip: no API on this browser');
+        return;
+      }
+    } catch (e) { WARN('pip threw:', e && e.message); return; }
+
+    // Report what actually happened. WebKit refuses without user activation by doing
+    // nothing at all, so "it did not throw" says nothing about whether it worked.
+    setTimeout(() => {
+      const now = mainVideo();
+      const mode = now && now.webkitPresentationMode;
+      const btn = document.getElementById('ytdc-pip');
+      if (btn && mode) btn.setAttribute('data-mode', mode);
+      LOG('pip', mode || (document.pictureInPictureElement ? 'picture-in-picture' : 'unknown'));
+    }, 700);
+  }
+
+  function mountPip() {
+    if (!S.features.pipButton || PANIC) return;
+    const onWatch = location.pathname === '/watch';
+    const existing = document.getElementById('ytdc-pip');
+    if (!onWatch || !mainVideo()) { if (existing) existing.remove(); return; }
+    if (existing) return;
+    const b = document.createElement('button');
+    b.id = 'ytdc-pip';
+    b.className = 'ytdc-pip';
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Picture in picture');
+    setHTML(b, ICONS.pip)
+    // A listener on a real tap, which is the only way iOS will grant PiP.
+    b.addEventListener('click', togglePip);
+    document.body.appendChild(b);
+  }
 
   // =================================================================
   // PAGE RULES
@@ -316,6 +454,16 @@
       '  max-height:52vh;overflow:auto;margin-top:8px}',
       '.ytdc-sel{width:100%;padding:10px;border-radius:8px;background:transparent;color:inherit;',
       '  border:1px solid rgba(128,128,128,.4);font:14px Roboto,system-ui}',
+      // Floating rather than injected into the player controls: YouTube rebuilds those
+      // constantly and renames their classes, and a control that vanishes mid-video is
+      // worse than one that sits beside them.
+      '.ytdc-pip{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));',
+      '  z-index:2147483644;width:44px;height:44px;border:0;border-radius:50%;',
+      '  display:flex;align-items:center;justify-content:center;color:#fff;',
+      '  background:rgba(0,0,0,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);',
+      '  box-shadow:0 2px 10px rgba(0,0,0,.35)}',
+      '.ytdc-pip:active{transform:scale(.92)}',
+      '.ytdc-pip[data-mode="picture-in-picture"]{background:rgba(255,0,0,.8)}',
     ].join('');
   }
 
@@ -464,7 +612,7 @@
       const icon = node.querySelector('c3-icon, svg');
       if (icon) {
         const holder = icon.tagName.toLowerCase() === 'svg' ? icon.parentElement : icon;
-        if (holder) holder.innerHTML = ICONS[spec.icon];
+        if (holder) setHTML(holder, ICONS[spec.icon])
       }
       const lab = node.querySelector('.navigationItemShapeNavigationItemLabel') || node.querySelector('span');
       if (lab) lab.textContent = spec.label;
@@ -558,13 +706,13 @@
   function mkIcon(name, label, fn) {
     const b = document.createElement('button');
     b.className = 'ytdc-icon-btn';
-    b.innerHTML = ICONS[name];
+    setHTML(b, ICONS[name])
     b.setAttribute('aria-label', label);
     b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
     return b;
   }
   function renderFooter(bar, root) {
-    bar.innerHTML = '';
+    setHTML(bar, '')
     if (!editing) {
       bar.appendChild(mkIcon('pencil', 'Edit sidebar items', () => startEdit(root, bar)));
       bar.appendChild(mkIcon('gear', 'Script settings', openSettings));
@@ -605,7 +753,7 @@
       });
       const grip = document.createElement('span');
       grip.className = 'ytdc-grip';
-      grip.innerHTML = ICONS.grip;
+      setHTML(grip, ICONS.grip)
       attachDrag(grip, el, label, root);
       el.insertBefore(cb, el.firstChild);
       el.appendChild(grip);
@@ -741,7 +889,7 @@
       card.appendChild(h);
       if (recoveryNote) {
         const r = document.createElement('div');
-        r.className = 'ytdc-note'; r.innerHTML = '<span class="ytdc-warn">' + recoveryNote + '</span>';
+        r.className = 'ytdc-note'; setHTML(r, '<span class="ytdc-warn">' + recoveryNote + '</span>')
         card.appendChild(r);
       }
       const s1 = document.createElement('div');
@@ -774,18 +922,18 @@
       S.checks = { sponsorblock: sb, checkedAt: Date.now() }; save();
       const sbb = document.createElement('div');
       sbb.className = 'ytdc-note';
-      sbb.innerHTML = 'SponsorBlock: ' + (sb === 'yes' ? '<span class="ytdc-ok">detected</span>'
+      setHTML(sbb, 'SponsorBlock: ' + (sb === 'yes' ? '<span class="ytdc-ok">detected</span>'
         : sb === 'no' ? '<span class="ytdc-no">not detected</span>'
           : '<span class="ytdc-warn">open a video to check</span>') +
         '<br><br>Edge on iOS: new tab, <b>edge://flags</b>, search <b>Extension</b>, set ' +
         '<b>Edge iOS Web Extension</b> to Enabled, restart Edge. Then menu, <b>Extensions</b>, ' +
-        'add <b>SponsorBlock for YouTube</b>.';
+        'add <b>SponsorBlock for YouTube</b>.')
       card.appendChild(sbb);
       const ub = document.createElement('div');
       ub.className = 'ytdc-note';
-      ub.innerHTML = 'uBlock Origin Lite: <span class="ytdc-warn">cannot be detected</span>. ' +
+      setHTML(ub, 'uBlock Origin Lite: <span class="ytdc-warn">cannot be detected</span>. ' +
         'It filters at the network layer and leaves nothing in the page to probe, so any status ' +
-        'here would be a guess. Install it from the same <b>Extensions</b> menu.';
+        'here would be a guess. Install it from the same <b>Extensions</b> menu.')
       card.appendChild(ub);
 
       const s4 = document.createElement('div');
@@ -829,9 +977,9 @@
       card.appendChild(s5);
       const rec = document.createElement('div');
       rec.className = 'ytdc-note';
-      rec.innerHTML = 'If the footer buttons ever disappear, add one of these to the URL and ' +
+      setHTML(rec, 'If the footer buttons ever disappear, add one of these to the URL and ' +
         'reload:<br><b>#ytdc-show</b> unhide everything<br><b>#ytdc-safe</b> disable sidebar ' +
-        'features for one session<br><b>#ytdc-reset</b> wipe all settings';
+        'features for one session<br><b>#ytdc-reset</b> wipe all settings')
       card.appendChild(rec);
       const row2 = document.createElement('div');
       row2.style.cssText = 'display:flex;gap:8px;margin-top:8px';
@@ -948,6 +1096,7 @@
   const update = () => {
     if (!document.getElementById(STYLE_ID)) restyle();
     syncHome();
+    mountPip();
     // Navigation resets the guards so nothing latches across pages.
     applies = 0; bailed = false; lastOrderApplied = '';
     if (editing && (!editRoot || !editRoot.isConnected)) {
@@ -963,9 +1112,9 @@
     if (PANIC || !document.body) return;
     new MutationObserver(() => {
       clearTimeout(t);
-      t = setTimeout(applyDrawer, 400);
+      t = setTimeout(() => { applyDrawer(); mountPip(); }, 400);
     }).observe(document.body, { childList: true, subtree: true });
-    setTimeout(applyDrawer, 1200);
+    setTimeout(() => { applyDrawer(); mountPip(); }, 1200);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', watch, { once: true });

@@ -37,6 +37,7 @@ import datetime
 import json
 import os
 import socket
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -55,6 +56,8 @@ LOADER_TEMPLATE = """// ==UserScript==
 // @grant        GM_xmlhttpRequest
 // @connect      {connect}
 // @run-at       document-start
+// @updateURL    {base}/loader.user.js
+// @downloadURL  {base}/loader.user.js
 // ==/UserScript==
 
 // Install this ONCE. It has no features of its own: it fetches the working copy from the
@@ -145,18 +148,40 @@ INDEX = """<!doctype html>
   a.btn {{ display: block; padding: 1rem; background: #1a73e8; color: #fff; text-decoration: none;
            border-radius: 8px; text-align: center; font-weight: 600; margin: 1.5rem 0; }}
   code {{ background: #f1f1f1; padding: .15em .4em; border-radius: 4px; }}
+  .url {{ background: #f1f1f1; padding: .8rem; border-radius: 8px; word-break: break-all;
+          font-family: ui-monospace, monospace; user-select: all; -webkit-user-select: all; }}
   li {{ margin: .5rem 0; }}
 </style>
 <h1>YouTube Declutter dev server</h1>
 <p>Serving <code>{file}</code> from this machine.</p>
-<a class="btn" href="/loader.user.js">Install the dev loader</a>
+
+<p><strong>Stay does not offer an install prompt for a link.</strong> Import by URL instead:
+Stay &rarr; <em>+</em> &rarr; <em>Link</em>, and paste this:</p>
+
+<div class="url" id="u">{base}/loader.user.js</div>
+<a class="btn" href="#" onclick="copyUrl();return false">Copy the URL</a>
+
 <ol>
-  <li>Tap the button. Your userscript manager should offer to install it.</li>
-  <li><strong>Disable the released YouTube Declutter script</strong> while the loader is
-      installed, or both run and fight over the same DOM.</li>
+  <li>Paste it into Stay's <em>Link</em> import.</li>
+  <li><strong>Disable the released YouTube Declutter script</strong> and any other YouTube
+      script while the loader is installed, or they fight over the same DOM.</li>
   <li>Open YouTube and reload. Each load pulls the current file from this machine.</li>
 </ol>
-<p>The loader has the address you used baked in, so there is no IP to edit.</p>
+
+<p>You only do this once. The loader carries <code>@updateURL</code>, and its version is
+derived from its contents, so a later change to the loader itself shows up as an update
+rather than another manual import. Editing the userscript needs nothing here at all.</p>
+
+<p>Direct link, for a manager that does intercept: <a href="/loader.user.js">loader.user.js</a></p>
+
+<script>
+function copyUrl() {{
+  var t = document.getElementById('u').textContent.trim();
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {{
+    document.querySelector('.btn').textContent = 'Copied';
+  }});
+}}
+</script>
 """
 
 
@@ -179,17 +204,14 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
 
         if path == "/":
-            self._send(INDEX.format(file=self.server.script_name).encode(), "text/html; charset=utf-8")
+            self._send(INDEX.format(file=self.server.script_name, base=base).encode(), "text/html; charset=utf-8")
         elif path == "/loader.user.js":
             # A version that changes every start, so the manager sees an update rather than
             # silently keeping the copy it already has.
-            loader = LOADER_TEMPLATE.format(
-                version=self.server.loader_version,
-                host=host,
-                connect=host.split(":")[0],
-                base=base,
-                file=self.server.script_name,
-            )
+            fields = dict(host=host, connect=host.split(":")[0], base=base,
+                          file=self.server.script_name)
+            digest = zlib.crc32(LOADER_TEMPLATE.format(version="0", **fields).encode()) % 100000
+            loader = LOADER_TEMPLATE.format(version=f"1.0.{digest}", **fields)
             self._send(loader.encode(), "text/javascript; charset=utf-8")
         elif path == f"/{self.server.script_name}":
             try:

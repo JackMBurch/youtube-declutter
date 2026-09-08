@@ -51,9 +51,12 @@ note() { printf '        %s\n' "$*"; }
 # Bash's /dev/tcp: connecting succeeds only if something is listening.
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
 
+# Print the resolved absolute path, not the bare name. pymobiledevice3's --chrome does
+# Path(value).exists(), which is false for a relative name however well it resolves on
+# PATH, so a bare name silently disables the local frontend.
 find_browser() {
   for b in google-chrome-stable google-chrome chromium chromium-browser; do
-    command -v "$b" >/dev/null 2>&1 && { printf '%s\n' "$b"; return 0; }
+    p="$(command -v "$b" 2>/dev/null)" && [ -n "$p" ] && { printf '%s\n' "$p"; return 0; }
   done
   return 1
 }

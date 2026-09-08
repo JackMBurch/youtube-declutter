@@ -129,9 +129,9 @@
     addExtraItems: ['Add extra sidebar items',
       'Adds Subscriptions, Watch later and Playlists to the sidebar.'],
     backgroundPlay: ['Keep playing in background tabs',
-      'Stops YouTube pausing when you switch tabs inside the browser. It cannot help when '
-      + 'you leave the browser or lock the screen: iOS suspends the page, and only Picture '
-      + 'in Picture survives that.'],
+      'Stops YouTube pausing when you switch tabs inside the browser. Takes effect on the '
+      + 'next page load. It cannot help when you leave the browser or lock the screen: iOS '
+      + 'suspends the page, and only Picture in Picture survives that.'],
     pipButton: ['Picture in Picture button',
       'Adds a PiP button to the player. iOS only allows PiP from a real tap, so this cannot '
       + 'be automatic - tap it before leaving the app, and audio keeps going.'],
@@ -912,6 +912,8 @@
         const [t, d] = FEATURE_INFO[key];
         card.appendChild(optRow(!!S.features[key], t, d, (v) => {
           S.features[key] = v; save(); restyle(); lastOrderApplied = '';
+          // The button is mounted imperatively rather than by CSS, so it needs telling.
+          mountPip();
         }));
       }
       const s2 = document.createElement('div');

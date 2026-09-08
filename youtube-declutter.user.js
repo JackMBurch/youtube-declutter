@@ -51,6 +51,20 @@
   const PANIC = false;
 
   // =================================================================
+  // LOG
+  //
+  // This script runs on a phone and is read from a desktop, so the console is the only
+  // window into it (dev/serve.py serves it there; scripts/ios-log.mjs reads it back).
+  //
+  // Deliberately quiet: one boot line and real faults, nothing per-frame. Every message
+  // crosses a USB debug bridge, and a chatty page is what makes a remote inspector crawl -
+  // YouTube's own blocked-request spam already proves the point. The [ytdc] prefix is what
+  // makes these findable among it.
+  // =================================================================
+  const LOG = (...a) => { try { console.info('[ytdc]', ...a); } catch (e) {} };
+  const WARN = (...a) => { try { console.warn('[ytdc]', ...a); } catch (e) {} };
+
+  // =================================================================
   // SETTINGS
   // =================================================================
   const DEFAULTS = {
@@ -152,6 +166,19 @@
     recoveryNote = 'All sidebar items unhidden.';
   }
   if (SAFE_MODE) recoveryNote += ' Safe mode is active (sidebar features off).';
+
+  // The one unconditional line: enough to identify which build is running and in what
+  // state, so a report of "it stopped working" can be checked rather than guessed at.
+  // Stringified, not passed as an object: this line is read through a remote inspector,
+  // and an object argument arrives there as its class name with the contents dropped.
+  LOG('boot', VERSION, JSON.stringify({
+    path: location.pathname,
+    safeMode: SAFE_MODE,
+    feed: S.features.feedMode,
+    on: Object.keys(S.features).filter((k) => S.features[k] === true).join(','),
+    hidden: S.sidebar.hidden.length,
+    recovery: recoveryNote.trim() || undefined,
+  }));
 
   // =================================================================
   // PAGE RULES
@@ -470,7 +497,13 @@
     if (editing && (!editRoot || !editRoot.isConnected)) {
       editing = false; pending = null; editRoot = null;
     }
-    if (++applies > MAX_APPLIES) bailed = true;
+    // Say so once, on the transition. Bailing is silent otherwise, and a silently
+    // disabled script looks identical to a broken one.
+    if (++applies > MAX_APPLIES && !bailed) {
+      bailed = true;
+      WARN('bailed after', MAX_APPLIES, 'applies on', location.pathname,
+        '- the drawer kept changing, so sidebar rules are now off for this page');
+    }
 
     autoCaptureLogo();
     // Both of these run before any feature gate so a bad state can

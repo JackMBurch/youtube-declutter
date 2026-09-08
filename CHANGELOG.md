@@ -15,6 +15,11 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Console logging: one `[ytdc] boot` line reporting version, path, safe mode and which
+  features are on, plus a warning when the sidebar guard bails. Deliberately quiet, because
+  the script is observed through a remote inspector over USB and a chatty page makes that
+  crawl. Detail is stringified, since an object argument reaches a remote console as its
+  class name with the contents dropped.
 - Repository foundation: licence, readme, changelog and ignore rules.
 
 ## [1.0.17] - 2026-09-07

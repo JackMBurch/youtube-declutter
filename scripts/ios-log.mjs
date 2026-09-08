@@ -18,9 +18,16 @@
 //   --out     JSONL output path. Default: dev/logs/console.jsonl
 //   --quiet   do not echo to stdout (the file still gets everything)
 //   --once    exit when the bridge goes away instead of waiting for it to come back
+//   --cmd-dir directory watched for *.js to evaluate on the page. Default: dev/cmd
+//   --no-cmd  disable the command channel (logs only)
+//
+// The command channel closes the loop. A sandboxed agent cannot reach the bridge, but it can
+// write a file: drop `foo.js` into dev/cmd/, it is evaluated in the page, the result is
+// appended to dev/logs/results.jsonl, and the input is renamed to foo.js.done so it runs
+// once. That makes the whole edit/observe/probe cycle reachable through the filesystem.
 
-import { appendFile, mkdir, stat, rename } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { appendFile, mkdir, stat, rename, readdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve, join } from 'node:path'
 
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -34,12 +41,16 @@ const OUT = resolve(flag('out', 'dev/logs/console.jsonl'))
 const QUIET = has('quiet')
 const ONCE = has('once')
 const FIXED_PORT = flag('port', null)
+const CMD_DIR = resolve(flag('cmd-dir', 'dev/cmd'))
+const RESULTS = resolve(flag('results', 'dev/logs/results.jsonl'))
+const CMD_ON = !has('no-cmd')
 
 // Rotate rather than grow without bound. A long session on a page that logs in a loop can
 // produce a lot, and an unreadable 500MB file helps nobody.
 const MAX_BYTES = 8 * 1024 * 1024
 
 const attached = new Map() // targetId -> WebSocket
+const pending = new Map()  // CDP message id -> resolver for that reply
 let nextId = 1
 
 const now = () => new Date().toISOString()
@@ -100,8 +111,13 @@ async function listTargets (port) {
   return await r.json()
 }
 
-function attach (target) {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
+function attach (target, port) {
+  // /json reports the bridge's own view of its address. When this process reached the
+  // bridge somewhere else - a forwarded port, a tunnel - that host:port does not resolve
+  // here, so point the socket at the endpoint we actually got an answer from.
+  const wsUrl = String(target.webSocketDebuggerUrl).replace(
+    /^ws:\/\/[^/]+/, `ws://127.0.0.1:${port}`)
+  const ws = new WebSocket(wsUrl)
   attached.set(target.id, ws)
 
   ws.addEventListener('open', () => {
@@ -116,6 +132,14 @@ function attach (target) {
   ws.addEventListener('message', (ev) => {
     let msg
     try { msg = JSON.parse(ev.data) } catch { return }
+
+    if (msg.id !== undefined && pending.has(msg.id)) {
+      const resolve_ = pending.get(msg.id)
+      pending.delete(msg.id)
+      resolve_(msg)
+      return
+    }
+
     const p = msg.params ?? {}
 
     switch (msg.method) {
@@ -167,6 +191,67 @@ function attach (target) {
   ws.addEventListener('error', () => drop('error'))
 }
 
+function evaluate (ws, expression) {
+  // awaitPromise so an async probe can be written naturally; returnByValue so the result
+  // arrives as data rather than a handle this process would have to dereference.
+  const id = nextId++
+  const done = new Promise((res) => pending.set(id, res))
+  ws.send(JSON.stringify({
+    id,
+    method: 'Runtime.evaluate',
+    params: { expression, awaitPromise: true, returnByValue: true, allowUnsafeEvalBlockedByCSP: true }
+  }))
+  return Promise.race([
+    done,
+    new Promise((res) => setTimeout(() => { pending.delete(id); res({ error: { message: 'timed out after 15s' } }) }, 15000))
+  ])
+}
+
+async function runCommands () {
+  if (!CMD_ON) return
+  let names = []
+  try {
+    await mkdir(CMD_DIR, { recursive: true })
+    names = (await readdir(CMD_DIR)).filter((n) => n.endsWith('.js')).sort()
+  } catch { return }
+  if (!names.length) return
+
+  const ws = [...attached.values()].find((w) => w.readyState === 1)
+  if (!ws) return // nothing attached yet; leave the file for the next pass
+
+  for (const name of names) {
+    const path = join(CMD_DIR, name)
+    let source
+    try { source = await readFile(path, 'utf8') } catch { continue }
+
+    // Rename before running, not after: a command that reloads the page or crashes the tab
+    // must not be picked up again on the next pass and run forever.
+    try { await rename(path, `${path}.done`) } catch { continue }
+
+    const reply = await evaluate(ws, source)
+    const d = reply.result ?? {}
+    const failed = reply.error ?? d.exceptionDetails
+    const record = {
+      ts: now(),
+      cmd: name,
+      ok: !failed,
+      value: failed ? undefined : d.result?.value ?? d.result?.description,
+      error: failed
+        ? (reply.error?.message ?? d.exceptionDetails?.exception?.description ?? d.exceptionDetails?.text)
+        : undefined
+    }
+    try {
+      await mkdir(dirname(RESULTS), { recursive: true })
+      await appendFile(RESULTS, JSON.stringify(record) + '\n')
+    } catch { /* reported below regardless */ }
+    write({
+      kind: 'command',
+      level: record.ok ? 'meta' : 'error',
+      text: `${name} -> ${record.ok ? JSON.stringify(record.value) : record.error}`
+    })
+  }
+}
+
 async function main () {
   let port = null
   let warnedNoBridge = false
@@ -185,6 +270,7 @@ async function main () {
       }
       warnedNoBridge = false
       console.error(`collecting from 127.0.0.1:${port}, filter "${FILTER}" -> ${OUT}`)
+      if (CMD_ON) console.error(`command channel: drop *.js in ${CMD_DIR}, results -> ${RESULTS}`)
     }
 
     try {
@@ -194,7 +280,7 @@ async function main () {
         if (!t.webSocketDebuggerUrl) continue
         if (FILTER && !String(t.url).includes(FILTER)) continue
         if (attached.has(t.id)) continue
-        attach(t)
+        attach(t, port)
       }
     } catch {
       // The bridge went away, or the phone did. Re-probe rather than dying: an unattended
@@ -204,6 +290,8 @@ async function main () {
       for (const ws of attached.values()) { try { ws.close() } catch {} }
       attached.clear()
     }
+
+    await runCommands()
 
     // Re-scan: YouTube is a single-page app, but full navigations still make new targets.
     await new Promise((r) => setTimeout(r, 2000))

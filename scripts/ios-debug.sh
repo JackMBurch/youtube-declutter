@@ -294,7 +294,36 @@ case "$CMD" in
     say "Note: WebKit allows one inspector session per page, so close any other"
     say "debugger holding the same tab. Ctrl-C here stops the bridge."
     say ""
-    exec "$PMD3_BIN" webinspector cdp --port "$PORT"
+
+    # Serve the DevTools frontend from a local Chrome rather than the hosted build.
+    #
+    # pymobiledevice3 proxies /devtools/* to chrome-devtools-frontend.appspot.com when it
+    # is reachable, and falls back to a local headless Chrome when it is not. The hosted
+    # path makes every asset a network fetch, so plugging the phone in - which raises its
+    # ipheth interface and reads to Chrome as a network change - fails all of them at once
+    # with ERR_NETWORK_CHANGED and leaves a blank window. Precisely the wrong dependency
+    # for a tool whose whole job starts with plugging a phone in.
+    #
+    # There is no flag to force local, but the choice is made by whether the hosted probe
+    # succeeds, and that probe is proxy-aware while loopback fetches deliberately are not.
+    # Pointing this process at a dead proxy therefore selects the local frontend and leaves
+    # the local asset fetches untouched. Set FRONTEND=hosted to opt out.
+    CHROME_ARGS=()
+    if [ "${FRONTEND:-local}" = "local" ]; then
+      if chrome_bin="$(find_browser)"; then
+        say "Serving DevTools from local Chrome ($chrome_bin); no network, so no flaps."
+        say ""
+        export HTTP_PROXY="http://127.0.0.1:1"  HTTPS_PROXY="http://127.0.0.1:1"
+        export http_proxy="http://127.0.0.1:1"  https_proxy="http://127.0.0.1:1"
+        CHROME_ARGS=(--chrome "$chrome_bin")
+      else
+        say "No local Chrome found, so falling back to the hosted DevTools build."
+        say "If assets fail with ERR_NETWORK_CHANGED, that is why."
+        say ""
+      fi
+    fi
+
+    exec "$PMD3_BIN" webinspector cdp --port "$PORT" "${CHROME_ARGS[@]}"
     ;;
 
   *)

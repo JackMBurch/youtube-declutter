@@ -33,6 +33,9 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - Picture in Picture button on the player, off by default. iOS grants PiP only from a real
   tap, and refuses a scripted call silently - returning normally while the mode stays
   `inline` - so this cannot be automatic, and the result is logged rather than assumed.
+  It is also the only way to keep audio going after leaving the app: resuming the pause iOS
+  performs on backgrounding was tried and does not work, because background audio is granted
+  by user intent carried through the media session, not by a media element asking.
 - Runs once per document even when injected twice, guarded on a DOM marker rather than a
   `window` flag, because the two copies get separate JavaScript contexts and share only the
   DOM.

@@ -147,48 +147,82 @@ LOADER_TEMPLATE = """// ==UserScript==
 }})();
 """
 
+# Rendered with str.replace rather than str.format: the page carries JavaScript, and
+# doubling every brace to survive format() makes it unreadable and easy to break.
 INDEX = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>YouTube Declutter dev server</title>
 <style>
-  body {{ font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 2rem auto; max-width: 34rem; padding: 0 1rem; }}
-  a.btn {{ display: block; padding: 1rem; background: #1a73e8; color: #fff; text-decoration: none;
-           border-radius: 8px; text-align: center; font-weight: 600; margin: 1.5rem 0; }}
-  code {{ background: #f1f1f1; padding: .15em .4em; border-radius: 4px; }}
-  .url {{ background: #f1f1f1; padding: .8rem; border-radius: 8px; word-break: break-all;
-          font-family: ui-monospace, monospace; user-select: all; -webkit-user-select: all; }}
-  li {{ margin: .5rem 0; }}
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0 auto; max-width: 34rem;
+         padding: 1.5rem 1rem 4rem; }
+  h2 { margin-top: 2.2rem; font-size: 1.05rem; }
+  .btn { display: block; width: 100%; padding: 1rem; background: #1a73e8; color: #fff;
+         border: 0; border-radius: 8px; text-align: center; font: 600 16px inherit;
+         margin: 1rem 0 .5rem; text-decoration: none; -webkit-appearance: none; }
+  .btn.alt { background: #444; }
+  code { background: #f1f1f1; padding: .15em .4em; border-radius: 4px; }
+  .url { background: #f1f1f1; padding: .8rem; border-radius: 8px; word-break: break-all;
+         font-family: ui-monospace, monospace; user-select: all; -webkit-user-select: all; }
+  textarea { width: 100%; height: 9rem; font: 11px ui-monospace, monospace; margin-top: .5rem;
+             border: 1px solid #ccc; border-radius: 8px; padding: .5rem; }
+  .hint { font-size: .85rem; opacity: .7; }
+  .sep { border: 0; border-top: 1px solid #ddd; margin: 2.5rem 0 0; }
 </style>
-<h1>YouTube Declutter dev server</h1>
-<p>Serving <code>{file}</code> from this machine.</p>
+<h1>YouTube Declutter</h1>
+<p>Serving <code>__FILE__</code>, __SIZE__ characters.</p>
 
-<p><strong>Stay does not offer an install prompt for a link.</strong> Import by URL instead:
-Stay &rarr; <em>+</em> &rarr; <em>Link</em>, and paste this:</p>
+<h2>1. Live reload, for debugging</h2>
+<p>Install once. Every page load pulls the current file from this machine, so editing here
+is all it takes. Stay has no install prompt for a link, so import by URL:
+Stay &rarr; <em>+</em> &rarr; <em>Link</em>.</p>
+<div class="url" id="u">__BASE__/loader.user.js</div>
+<button class="btn" onclick="copyEl(document.getElementById('u'), this)">Copy the URL</button>
 
-<div class="url" id="u">{base}/loader.user.js</div>
-<a class="btn" href="#" onclick="copyUrl();return false">Copy the URL</a>
+<h2>2. Plain copy, for when you are not debugging</h2>
+<p>Copies the whole script. Paste it into Stay as its own script
+(<em>+</em> &rarr; <em>Write script</em>), and it runs with no dev server and no laptop.</p>
+<button class="btn alt" onclick="copyScript(this)">Copy the script</button>
+<p class="hint">If the button cannot reach the clipboard, the text appears below - long-press
+it, Select All, Copy. Safari blocks the clipboard API on plain HTTP, so that happens.</p>
+<textarea id="src" hidden readonly>__SCRIPT__</textarea>
+<p><a href="/__FILE__">View the raw script</a></p>
 
-<ol>
-  <li>Paste it into Stay's <em>Link</em> import.</li>
-  <li><strong>Disable the released YouTube Declutter script</strong> and any other YouTube
-      script while the loader is installed, or they fight over the same DOM.</li>
-  <li>Open YouTube and reload. Each load pulls the current file from this machine.</li>
-</ol>
-
-<p>You only do this once. The loader carries <code>@updateURL</code>, and its version is
-derived from its contents, so a later change to the loader itself shows up as an update
-rather than another manual import. Editing the userscript needs nothing here at all.</p>
-
-<p>Direct link, for a manager that does intercept: <a href="/loader.user.js">loader.user.js</a></p>
+<hr class="sep">
+<p class="hint">Only run one of them at a time. Two copies fight over the same DOM.</p>
 
 <script>
-function copyUrl() {{
-  var t = document.getElementById('u').textContent.trim();
-  if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {{
-    document.querySelector('.btn').textContent = 'Copied';
-  }});
-}}
+function flash(btn, msg) { var t = btn.textContent; btn.textContent = msg;
+  setTimeout(function () { btn.textContent = t; }, 1800); }
+
+// iOS will not select inside a readonly field, and execCommand needs a live selection.
+function selectAll(el) {
+  el.removeAttribute('readonly');
+  var range = document.createRange();
+  range.selectNodeContents(el);
+  var sel = window.getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+  if (el.setSelectionRange) el.setSelectionRange(0, el.value.length);
+  el.setAttribute('readonly', '');
+}
+
+function copyText(text, el, btn) {
+  var done = false;
+  if (el) { el.hidden = false; el.focus(); selectAll(el); }
+  try { done = document.execCommand('copy'); } catch (e) { done = false; }
+  if (done) { flash(btn, 'Copied'); if (el) el.hidden = true; return; }
+  // Secure-context only, so usually absent here - tried second, not first.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      function () { flash(btn, 'Copied'); if (el) el.hidden = true; },
+      function () { flash(btn, 'Copy it by hand'); });
+    return;
+  }
+  flash(btn, 'Copy it by hand');
+}
+
+function copyEl(node, btn) { copyText(node.textContent.trim(), null, btn); }
+function copyScript(btn) { var ta = document.getElementById('src'); copyText(ta.value, ta, btn); }
 </script>
 """
 
@@ -212,7 +246,19 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
 
         if path == "/":
-            self._send(INDEX.format(file=self.server.script_name, base=base).encode(), "text/html; charset=utf-8")
+            try:
+                with open(os.path.join(ROOT, self.server.script_name)) as fh:
+                    source = fh.read()
+            except OSError:
+                source = "// could not read " + self.server.script_name
+            # Escaped so the script's own markup cannot end the textarea early.
+            escaped = source.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            page = (INDEX
+                    .replace("__FILE__", self.server.script_name)
+                    .replace("__BASE__", base)
+                    .replace("__SIZE__", str(len(source)))
+                    .replace("__SCRIPT__", escaped))
+            self._send(page.encode(), "text/html; charset=utf-8")
         elif path == "/loader.user.js":
             # A version that changes every start, so the manager sees an update rather than
             # silently keeping the copy it already has.

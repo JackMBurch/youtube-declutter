@@ -8,6 +8,15 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Stop video previews, off by default. Thumbnails play a silent preview when they think you
+  are interested, which on a phone mostly starts by accident while scrolling. Detection is
+  structural rather than by class name, and it only ever pauses muted video, so it cannot
+  silence something you are listening to.
+- Offline checks (`node tests/run.mjs`) and a CI workflow that refuses a change to the
+  script without a version bump.
+
 ## [1.1.0] - 2026-09-07
 
 ### Changed

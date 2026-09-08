@@ -312,6 +312,12 @@
   const stopPreview = (v) => {
     if (!S.features.stopPreviews || !(v instanceof HTMLMediaElement)) return;
     if (isMainPlayer(v)) return;
+    // Only ever silence something already silent. A preview is muted by necessity - no
+    // browser autoplays audible video - so requiring it means this feature cannot pause
+    // anything the user is actually listening to, however wrong the guess above is. The
+    // minimised player that survives navigating away from a video is the case that matters:
+    // it is audible, so it is safe from this even if it sits outside a player container.
+    if (!v.muted) return;
     try {
       v.autoplay = false;
       v.preload = 'none';

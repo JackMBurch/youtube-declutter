@@ -88,7 +88,9 @@ check('preview suppression cannot touch the main player', () => {
   assert(fn, 'stopPreview is gone or was reshaped')
   assert(/if \(isMainPlayer\(v\)\) return;/.test(fn), 'the main-player guard is missing')
   assert(/if \(!S\.features\.stopPreviews/.test(fn), 'it no longer respects the feature flag')
-  return 'flag and main-player guards present'
+  // Without this, a miniplayer the user is listening to could be paused.
+  assert(/if \(!v\.muted\) return;/.test(fn), 'it can now pause audible video')
+  return 'flag, main-player and muted guards present'
 })
 
 check('every feature flag has settings copy', () => {

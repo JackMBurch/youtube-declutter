@@ -50,6 +50,7 @@ LOADER_TEMPLATE = """// ==UserScript==
 // @description  Loads the working copy from {host} on every page load. Development only.
 // @author       JackMBurch
 // @license      MIT
+// @copyright    2026, Jack Burch
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
 // @match        https://youtube.com/*

@@ -4,6 +4,7 @@
 // @version      1.0.17
 // @description  Declutter YouTube on mobile and desktop. Customisable sidebar, yoodle replacement, Shorts and community post hiding, backup and restore.
 // @license      MIT
+// @copyright    2026, Jack Burch
 // @author       JackMBurch
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
@@ -221,6 +222,14 @@
   const mainVideo = () => document.querySelector(VIDEO_SEL);
 
   if (S.features.backgroundPlay) {
+    // Keep an honest reference before masking: the code below has to know whether the page
+    // is really hidden, and after the mask everything reports 'visible' including us.
+    const realHidden = (() => {
+      const d = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden');
+      const get = d && d.get;
+      return () => { try { return !!get.call(document); } catch (e) { return false; } };
+    })();
+
     // Define over the prototype's getter rather than the instance so that reads through
     // Document.prototype see it too, and swallow the events at capture so YouTube's own
     // listeners never run.
@@ -229,6 +238,16 @@
         Object.defineProperty(obj, prop, { configurable: true, get: () => value });
       } catch (e) { WARN('could not mask', prop, e && e.message); }
     };
+
+    let hiddenAt = 0, resumes = 0, wasPlaying = false, userPausedAt = 0;
+
+    // Registered before the swallower below, so it still sees the event: the swallower
+    // calls stopImmediatePropagation, which only stops listeners added after it.
+    const noteHide = () => { if (realHidden()) { hiddenAt = Date.now(); resumes = 0; } };
+    window.addEventListener('visibilitychange', noteHide, true);
+    document.addEventListener('visibilitychange', noteHide, true);
+    window.addEventListener('pagehide', () => { hiddenAt = Date.now(); resumes = 0; }, true);
+
     lie(Document.prototype, 'hidden', false);
     lie(Document.prototype, 'webkitHidden', false);
     lie(Document.prototype, 'visibilityState', 'visible');
@@ -239,6 +258,56 @@
       window.addEventListener(type, swallow, true);
       document.addEventListener(type, swallow, true);
     }
+
+    // Know when a pause was asked for deliberately. iOS routes the lock screen and Control
+    // Centre buttons through Media Session, and YouTube registers the handlers, so wrapping
+    // the registration lets us see the user's intent without taking it over.
+    try {
+      const ms = navigator.mediaSession;
+      if (ms && typeof ms.setActionHandler === 'function') {
+        const orig = ms.setActionHandler.bind(ms);
+        ms.setActionHandler = function (action, handler) {
+          if (action === 'pause' && typeof handler === 'function') {
+            return orig('pause', function () {
+              userPausedAt = Date.now();
+              return handler.apply(this, arguments);
+            });
+          }
+          return orig(action, handler);
+        };
+      }
+    } catch (e) { WARN('could not observe media session pauses:', e && e.message); }
+
+    document.addEventListener('playing', (e) => {
+      if (e.target instanceof HTMLMediaElement) wasPlaying = true;
+    }, true);
+
+    // Undo the pause iOS performs when the app goes to the background.
+    //
+    // Leaving the app pauses the element at the media stack, below anything JavaScript can
+    // veto - but the media session survives, which is why the lock screen play button then
+    // works and audio continues. So rather than prevent the pause, resume from it.
+    //
+    // Three guards, because getting this wrong makes the pause button useless: only while
+    // genuinely hidden, only within a few seconds of going to the background, and only
+    // twice per backgrounding. A user reaching for pause on the lock screen does it later
+    // than that, and is recognised through the Media Session handler regardless.
+    document.addEventListener('pause', (e) => {
+      const v = e.target;
+      if (!(v instanceof HTMLMediaElement) || !wasPlaying) return;
+      if (Date.now() - userPausedAt < 4000) { LOG('bgplay: user paused, leaving it'); return; }
+      if (!realHidden()) return;
+      if (Date.now() - hiddenAt > 4000) return;
+      if (resumes >= 2) { LOG('bgplay: already resumed twice this backgrounding'); return; }
+      resumes++;
+      const p = v.play();
+      if (p && p.then) {
+        p.then(() => LOG('bgplay: resumed after background pause'))
+         .catch((err) => WARN('bgplay: resume refused:', err && err.message));
+      } else {
+        LOG('bgplay: resume requested (no promise returned)');
+      }
+    }, true);
   }
 
   // Run the rest once per document.

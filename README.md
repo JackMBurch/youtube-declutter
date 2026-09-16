@@ -82,6 +82,8 @@ scripts/release.sh minor --publish   # bump, tag, push, move release, wait for G
 scripts/release.sh status            # version here, on release, and live on Greasy Fork
 ```
 
+The script page description comes from `greasyfork.md` on `release`, synced the same way.
+
 `--publish` refuses a dirty tree, failing checks, or a `release` branch holding commits this
 branch lacks. Webhook sync is known to fail quietly, so it polls Greasy Fork until the new
 version appears rather than assuming the push worked.

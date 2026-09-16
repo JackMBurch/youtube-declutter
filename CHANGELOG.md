@@ -8,6 +8,10 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Description now says the script is for mobile YouTube in Edge on iOS.
+
 ## [1.2.0] - 2026-09-16
 
 ### Added

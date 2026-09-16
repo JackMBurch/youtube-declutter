@@ -2,7 +2,7 @@
 // @name         YouTube Declutter
 // @namespace    local.yt-declutter
 // @version      1.2.0
-// @description  Declutter YouTube on mobile and desktop. Customisable sidebar, yoodle replacement, Shorts and community post hiding, backup and restore.
+// @description  Declutter mobile YouTube in Edge on iOS. Customisable sidebar, yoodle replacement, Shorts and community post hiding, backup and restore.
 // @license      MIT
 // @copyright    2026, Jack Burch
 // @author       JackMBurch

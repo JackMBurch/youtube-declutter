@@ -11,6 +11,8 @@
 // @match        https://youtube.com/*
 // @grant        none
 // @run-at       document-start
+// @downloadURL  https://update.greasyfork.org/scripts/596100/YouTube%20Declutter.user.js
+// @updateURL    https://update.greasyfork.org/scripts/596100/YouTube%20Declutter.meta.js
 // ==/UserScript==
 
 (function () {

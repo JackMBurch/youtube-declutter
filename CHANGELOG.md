@@ -16,6 +16,8 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
   silence something you are listening to.
 - Offline checks (`node tests/run.mjs`) and a CI workflow that refuses a change to the
   script without a version bump.
+- Published on Greasy Fork as script 596100. `@updateURL` and `@downloadURL` point there, so
+  a copy pasted from anywhere else still receives updates.
 
 ## [1.1.0] - 2026-09-07
 

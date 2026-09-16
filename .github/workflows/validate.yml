@@ -7,7 +7,7 @@ name: validate
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, release]
   pull_request:
 
 permissions:

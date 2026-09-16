@@ -38,8 +38,11 @@ drops the hash, by writing a short-lived marker that the post-redirect load pick
 
 ## Install
 
-Not yet published. Once it is on Greasy Fork, installing from there gives automatic updates.
-Until then, paste the contents of `youtube-declutter.user.js` into your userscript manager.
+Install from Greasy Fork, which also gives you automatic updates:
+[greasyfork.org/scripts/596100](https://greasyfork.org/scripts/596100-youtube-declutter).
+
+A copy pasted straight from this repository updates from Greasy Fork too, since the script
+carries `@updateURL` and `@downloadURL` pointing there.
 
 Tested against Stay on iOS. Any Tampermonkey- or Violentmonkey-compatible manager should work,
 since the script requests no `GM_*` privileges.
@@ -67,6 +70,21 @@ The version is declared twice, in `@version` and in `const VERSION`, and the two
 drift: a manager decides whether to update by comparing `@version`, while the boot line and
 debug sheet report `const VERSION`. `scripts/release.sh` is the only thing that should write
 either, and CI fails a pull request that changes the script without raising the version.
+
+### Publishing
+
+Greasy Fork syncs the script from the `release` branch through a GitHub webhook. Pushing to
+`master` publishes nothing; moving `release` does. That lets unfinished work sit on `master`
+without reaching everyone who installed the script.
+
+```
+scripts/release.sh minor --publish   # bump, tag, push, move release, wait for Greasy Fork
+scripts/release.sh status            # version here, on release, and live on Greasy Fork
+```
+
+`--publish` refuses a dirty tree, failing checks, or a `release` branch holding commits this
+branch lacks. Webhook sync is known to fail quietly, so it polls Greasy Fork until the new
+version appears rather than assuming the push worked.
 
 Working notes, plans and epic trackers live in `.workspace/`, which is a separate git
 repository excluded from this one. See `.workspace/README.md`.

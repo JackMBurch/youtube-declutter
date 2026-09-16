@@ -181,7 +181,9 @@ Stay &rarr; <em>+</em> &rarr; <em>Link</em>.</p>
 
 <h2>2. Plain copy, for when you are not debugging</h2>
 <p>Copies the whole script. Paste it into Stay as its own script
-(<em>+</em> &rarr; <em>Write script</em>), and it runs with no dev server and no laptop.</p>
+(<em>+</em> &rarr; <em>Write script</em>), and it runs with no dev server and no laptop.
+It updates itself from Greasy Fork, so it will move to the published version, not this
+working copy.</p>
 <button class="btn alt" onclick="copyScript(this)">Copy the script</button>
 <p class="hint">If the button cannot reach the clipboard, the text appears below - long-press
 it, Select All, Copy. Safari blocks the clipboard API on plain HTTP, so that happens.</p>

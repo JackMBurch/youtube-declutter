@@ -59,6 +59,19 @@ check('metadata block is complete', () => {
   return 'all required fields present'
 })
 
+check('updates come from Greasy Fork', () => {
+  // Greasy Fork strips and rewrites these on its own copy. They matter for every other
+  // copy - one pasted from the dev server - which otherwise never updates at all.
+  const dl = src.match(/^\/\/ @downloadURL\s+(\S+)/m)?.[1]
+  const up = src.match(/^\/\/ @updateURL\s+(\S+)/m)?.[1]
+  assert(dl && up, 'missing @downloadURL or @updateURL')
+  for (const u of [dl, up]) {
+    assert(u.startsWith('https://update.greasyfork.org/scripts/596100/'), `not Greasy Fork script 596100: ${u}`)
+  }
+  assert(dl.endsWith('.user.js') && up.endsWith('.meta.js'), 'download should be .user.js and update .meta.js')
+  return 'script 596100'
+})
+
 check('innerHTML always goes through the Trusted Types helper', () => {
   // YouTube rejects a raw assignment, and the throw cascades: Stay abandons its page-world
   // injection and the page reload-loops. Worth failing a build over.

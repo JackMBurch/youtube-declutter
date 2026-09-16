@@ -27,12 +27,12 @@ session file for completed work is noise in `sessions/`.
 Run the commands and use the real output. A guessed branch or commit is the single most
 damaging thing a handoff can contain, because the next session trusts it.
 
-Read `.workspace/config.toml` for the layout, then:
+Read `<WORKSPACE_DIR>/config.toml` for the layout, then:
 
 **Multi-repo** - each sibling directory that is a git repository:
 
 ```
-for r in .workspace/../*/; do
+for r in <WORKSPACE_DIR>/../*/; do
   [ -d "$r/.git" ] || continue
   echo "== $r"; git -C "$r" status -sb | head -20; git -C "$r" log --oneline -5
 done
@@ -50,9 +50,15 @@ Note for each: current branch, its base, uncommitted changes, unpushed commits, 
 
 ### 2. Write the file
 
-Path: `.workspace/sessions/<YYYY-MM-DD>-<slug>.md`, where `<slug>` names the work
+Path: `<WORKSPACE_DIR>/sessions/<YYYY-MM-DD>-<slug>.md`, where `<slug>` names the work
 (`checkout-payment-intents`, not `session-3`). Start from
-`.workspace/templates/session.md`.
+`<WORKSPACE_DIR>/templates/session.md`.
+
+If `config.toml` lists `subworkspaces` and the parked work belongs to one of those
+sub-projects alone, write it under that sub-workspace instead:
+`<WORKSPACE_DIR>/<sub-project path>/sessions/`. From inside the sub-project the plain
+`<WORKSPACE_DIR>/sessions/` path already resolves there through the symlink, so the only case
+that needs care is parking sub-project work from the project root.
 
 The two sections that carry the value:
 
@@ -64,7 +70,7 @@ The two sections that carry the value:
 ### 3. Update the index and the tracker
 
 ```
-python3 .workspace/bin/build-index.py
+python3 <WORKSPACE_DIR>/bin/build-index.py
 ```
 
 If the parked work belongs to an epic, update that epic's tracker in the same turn. Parking is
@@ -72,6 +78,6 @@ work stopping, which is exactly when a tracker most often goes stale.
 
 ## On resume
 
-Read the session file, act on it, then move it to `.workspace/sessions/archive/` and set
+Read the session file, act on it, then move it to `<WORKSPACE_DIR>/sessions/archive/` and set
 `status: done`. A resumed session left in place will be read again by the next session and
 believed a second time.

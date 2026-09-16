@@ -8,6 +8,8 @@ uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-16
+
 ### Added
 
 - Stop video previews, off by default. Thumbnails play a silent preview when they think you

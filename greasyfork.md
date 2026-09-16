@@ -1,4 +1,6 @@
-Cleans up YouTube on your phone and on desktop. Built for iOS, where you can't change the app.
+Cleans up mobile YouTube in Edge on iOS.
+
+It's meant to run alongside the [uBlock Origin](https://github.com/gorhill/uBlock) and [SponsorBlock](https://sponsor.ajay.app/) extensions in Edge. Those handle ads and sponsor segments. This handles the clutter.
 
 ## What it does
 
